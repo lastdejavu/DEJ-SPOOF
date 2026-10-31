@@ -25,24 +25,35 @@ client (v2rayNG)
 * One free UDP port on both sides (default `2080`)
 * Optionally, a spare IP on the foreign server's subnet to spoof as (`x.x.x.100`)
 
-## Install
+## Install (one line, no clone needed)
 
 On the **foreign** server:
 
 ```bash
-sudo ./scripts/install.sh --role server --peer <IRAN_IP>
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/install.sh -o /tmp/tun.sh \
+  && sudo bash /tmp/tun.sh --role server --peer <IRAN_IP>
 ```
 
 On the **Iranian** server:
 
 ```bash
-sudo ./scripts/install.sh --role client --peer <FOREIGN_IP> --forward 9044,9033
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/install.sh -o /tmp/tun.sh \
+  && sudo bash /tmp/tun.sh --role client --peer <FOREIGN_IP> --forward 9044,9033
 ```
 
 Verify:
 
 ```bash
-sudo ./scripts/verify.sh --peer-tun 10.100.100.1 --ports 9044,9033 --public-ip <IRAN_IP>
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/verify.sh -o /tmp/v.sh \
+  && sudo bash /tmp/v.sh --peer-tun 10.100.100.1 --ports 9044,9033 --public-ip <IRAN_IP>
+```
+
+### Or clone it
+
+```bash
+git clone https://github.com/lastdejavu/DEJ-SPOOF.git && cd DEJ-SPOOF
+sudo ./scripts/install.sh --role server --peer <IRAN_IP>
+sudo ./scripts/install.sh --role client --peer <FOREIGN_IP> --forward 9044,9033
 ```
 
 The installer auto-detects the interface, writes `/etc/spoof-tunnel/config.yaml`, installs spoof-tunnel v6.3.1, applies `FORWARD` + `MASQUERADE` + `rp_filter` rules, and makes all of it survive a reboot (`spoof-tunnel-nat.service`).

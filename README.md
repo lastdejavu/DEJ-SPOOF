@@ -36,26 +36,37 @@
 | IP اضافی روی سرور خارج | برای جعل مبدأ (مثلاً `x.x.x.100` در همان ساب‌نت) — اختیاری ولی توصیه می‌شود |
 | پورت UDP | یکی آزاد روی هر دو سرور (پیش‌فرض `2080`) |
 
-## نصب سریع
+## نصب سریع (یک خط، بدون clone)
 
 ### ۱) روی سرور خارج (kharej)
 
 ```bash
-sudo ./scripts/install.sh --role server --peer <IP_IRAN>
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/install.sh -o /tmp/tun.sh \
+  && sudo bash /tmp/tun.sh --role server --peer <IP_IRAN>
 ```
 
 ### ۲) روی سرور ایران
 
 ```bash
-sudo ./scripts/install.sh --role client --peer <IP_KHAREJ> --forward 9044,9033
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/install.sh -o /tmp/tun.sh \
+  && sudo bash /tmp/tun.sh --role client --peer <IP_KHAREJ> --forward 9044,9033
 ```
 
-همین. اسکریپت خودش اینترفیس شبکه را تشخیص می‌دهد، کانفیگ را می‌سازد، تانل را نصب می‌کند، قواعد فوروارد/NAT را می‌گذارد و در آخر تست می‌کند.
+تمام. اسکریپت خودش اینترفیس شبکه را تشخیص می‌دهد، کانفیگ را می‌سازد، تانل را نصب می‌کند، قواعد فوروارد/NAT را می‌گذارد و در آخر خودش تست می‌کند.
 
-### ۳) تست
+### ۳) تست کامل
 
 ```bash
-sudo ./scripts/verify.sh --peer-tun 10.100.100.1 --ports 9044,9033 --public-ip <IP_IRAN>
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/verify.sh -o /tmp/v.sh \
+  && sudo bash /tmp/v.sh --peer-tun 10.100.100.1 --ports 9044,9033 --public-ip <IP_IRAN>
+```
+
+### اگر clone می‌خواهی
+
+```bash
+git clone https://github.com/lastdejavu/DEJ-SPOOF.git && cd DEJ-SPOOF
+sudo ./scripts/install.sh --role server --peer <IP_IRAN>      # روی سرور خارج
+sudo ./scripts/install.sh --role client --peer <IP_KHAREJ> --forward 9044,9033   # روی سرور ایران
 ```
 
 ## گزینه‌های اسکریپت
