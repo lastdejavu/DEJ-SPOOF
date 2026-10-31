@@ -45,7 +45,26 @@ sudo python3 /tmp/spoof-test.py send --peer <SERVER_IP> --port 2390 --spoof 1.2.
 
 It also sends a size ladder (200..1472 B): if large sizes vanish, the path filters big UDP packets and no tunnel will survive there, spoofing or not.
 
-Realistic expectation: the **foreign** server can usually spoof inside its own /24; the **Iranian** server almost always only emits its real IP (hypervisor restriction). That is what the installer defaults assume.
+### Iranian servers may spoof too - test, do not assume
+
+It is widely repeated that Iranian servers can never spoof. **That is not a rule.** Some providers forward packets with foreign sources. The tool can try several addresses in your own /24 automatically:
+
+```bash
+sudo python3 spoof-test.py send --peer <PEER_IP> --port 2390 --spoof auto
+```
+
+If one of them arrives with the spoofed address, the Iranian side can spoof as well. In that case put the **peer's** address in the Iranian spoof list (not its own real IP) and add the same address on the foreign side.
+
+What we measured on three different Iranian providers (8 candidate addresses each, own /24):
+
+| side | control packets | spoofed packets |
+| :--- | :--- | :--- |
+| Iran #1 | 6/6 arrived | none arrived |
+| Iran #2 | 6/6 arrived | none arrived |
+| Iran #3 | 6/6 arrived | none arrived |
+| foreign | healthy | arrived with the spoofed IP |
+
+So on those three the provider's anti-spoof filter is active - but since this differs per provider, every new server must be tested.
 
 ---
 

@@ -118,6 +118,14 @@ def parse_payload(data):
         return None
 
 
+def split_tag(tag):
+    """'iran5__SPF0' -> ('iran5', 'SPF0')"""
+    if "__" in tag:
+        lab, kind = tag.rsplit("__", 1)
+        return lab, kind
+    return "", tag
+
+
 def real_ip_towards(peer):
     """Local source IP the kernel would use to reach peer."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -126,6 +134,17 @@ def real_ip_towards(peer):
         return s.getsockname()[0]
     finally:
         s.close()
+
+
+def auto_candidates(my_real, extra_peer=None):
+    """Spoof candidates that are most likely to survive a provider filter."""
+    base = ".".join(my_real.split(".")[:3])
+    cands = []
+    for last in ("100", "1", "2", "50", "200", "254", "10", "20"):
+        ip = f"{base}.{last}"
+        if ip != my_real and ip not in cands:
+            cands.append(ip)
+    return cands
 
 
 def default_iface():
@@ -193,94 +212,103 @@ def cmd_listen(args):
         groups.setdefault(tag, []).append((size, seen[(tag, size)]))
 
     print("=" * 78)
-    print(f"{'tag':<8}{'size':>6}{'received':>10}  observed source ip")
+    print(f"{'tag':<16}{'size':>6}{'recv':>6}  observed source ip")
     print("=" * 78)
     for tag in sorted(groups):
         for size, srcs in sorted(groups[tag]):
             total = sum(srcs.values())
             src_txt = ", ".join(f"{ip} x{n}" for ip, n in sorted(srcs.items()))
-            print(f"{tag:<8}{size:>6}{total:>10}  {src_txt}")
+            print(f"{tag:<16}{size:>6}{total:>6}  {src_txt}")
     print()
 
     # ---------- verdict ----------
-    def observed(tag, size):
-        return seen.get((tag, size), {})
+    labels = sorted({split_tag(t)[0] for t in groups})
+    overall_ok = False
 
-    ctrl_srcs = {}
-    for (tag, size), srcs in seen.items():
-        if tag == "CTRL":
-            for ip, n in srcs.items():
-                ctrl_srcs[ip] = ctrl_srcs.get(ip, 0) + n
+    for lab in labels:
+        title = lab if lab else "sender"
+        my_tags = [t for t in groups if split_tag(t)[0] == lab]
 
-    print("=" * 78)
-    print("VERDICT")
-    print("=" * 78)
+        def srcs_of(kind_pred):
+            out = {}
+            for t in my_tags:
+                _, kind = split_tag(t)
+                if kind_pred(kind):
+                    for size, s_ in groups[t]:
+                        for ip, n in s_.items():
+                            out[ip] = out.get(ip, 0) + n
+            return out
 
-    if not ctrl_srcs:
-        print("control packets never arrived -> the two servers cannot reach each")
-        print("other on this UDP port at all. Fix reachability/firewall first.")
-        return
+        ctrl = srcs_of(lambda k: k == "CTRL")
+        print("=" * 78)
+        print(f"VERDICT - {title}")
+        print("=" * 78)
 
-    print(f"path works: control packets arrived from {', '.join(ctrl_srcs)}")
-
-    any_ok = False
-    spoof_tags = [t for t in sorted(groups) if t not in ("CTRL",) and not t.startswith("SZ")]
-    if not spoof_tags:
-        print("no spoofed packet arrived at all.")
-        print("  the packets either left with your real source (see table) or were")
-        print("  dropped upstream because the source address is not yours.")
-        print("  -> treat this side as NOT spoof-capable.")
-    for tag in spoof_tags:
-        srcs = {}
-        for size, s_ in groups[tag]:
-            for ip, n in s_.items():
-                srcs[ip] = srcs.get(ip, 0) + n
-        if not srcs:
-            print(f"{tag}: nothing arrived -> spoofed packets are dropped on the way out")
+        if not ctrl:
+            print("  control packets never arrived -> the two servers cannot reach")
+            print("  each other on this UDP port. Fix reachability/firewall first.")
+            print()
             continue
-        only_peer_real = set(srcs) <= set(ctrl_srcs)
-        if only_peer_real:
-            print(f"{tag}: arrived as the sender's REAL ip -> spoofing is rewritten/blocked")
+
+        real_set = set(ctrl)
+        print(f"  path works: control arrived from {', '.join(sorted(real_set))}")
+
+        spoof_kinds = [k for k in (split_tag(t)[1] for t in my_tags) if k.startswith("SPF")]
+        if not spoof_kinds:
+            print("  no spoofed packet arrived at all -> packets with a foreign")
+            print("  source are dropped before leaving this host or upstream.")
+            print("  -> this side is NOT spoof-capable on those addresses.")
         else:
-            print(f"{tag}: arrived as {', '.join(sorted(set(srcs) - set(ctrl_srcs)))}  <-- SPOOF WORKS")
-            any_ok = True
+            for kind in sorted(spoof_kinds):
+                srcs = srcs_of(lambda k, kk=kind: k == kk)
+                if not srcs:
+                    print(f"  {kind}: nothing arrived")
+                elif set(srcs) <= real_set:
+                    print(f"  {kind}: arrived as {', '.join(sorted(srcs))}"
+                          f"  -> rewritten, spoof NOT available")
+                else:
+                    good = sorted(set(srcs) - real_set)
+                    print(f"  {kind}: arrived as {', '.join(good)}  <-- SPOOF WORKS")
+                    overall_ok = True
 
-    # ---------- size ladder ----------
-    ladder = {}
-    for (tag, size), srcs in seen.items():
-        if tag.startswith("SZ"):
-            ladder[size] = ladder.get(size, 0) + sum(srcs.values())
-    if not ladder:
+        ladder = {}
+        for t in my_tags:
+            _, kind = split_tag(t)
+            if kind.startswith("SZ"):
+                for size, s_ in groups[t]:
+                    ladder[size] = ladder.get(size, 0) + sum(s_.values())
         print()
-        print("size ladder: nothing arrived for any size -> the path drops these")
-        print("  packets entirely (source filter, not size filter).")
-    if ladder:
+        if not ladder:
+            print("  size ladder: nothing arrived for any size -> the path drops")
+            print("  these packets entirely (source filter, not size filter).")
+        else:
+            print("  size ladder (large UDP must survive or tunnels break):")
+            for size in sorted(ladder):
+                print(f"    {size:>5} B payload : {ladder[size]} arrived")
+            vals = [v for v in ladder.values()]
+            if min(vals) == 0:
+                print("    >>> a size arrived ZERO times - the path filters large UDP.")
+                print("        Lower the tunnel MTU, or this path cannot carry the tunnel.")
+            elif max(vals) > 2 * min(vals):
+                print("    >>> delivery drops with size - likely size filtering.")
+                print("        Try --mtu 1360 or 1300 before giving up on this path.")
         print()
-        print("size ladder (large UDP must survive or tunnels break under load):")
-        worst = 1.0
-        for size in sorted(ladder):
-            got = ladder[size]
-            # the sender sends max(3, count//2) packets of each size; we only
-            # know what arrived, so report raw counts and flag suspicious gaps
-            print(f"  {size:>5} B payload : {got} arrived")
-            if got == 0:
-                worst = 0.0
-        if worst == 0.0:
-            print("  >>> some sizes arrived in ZERO - the path filters large UDP packets.")
-            print("      Lower the tunnel MTU, or this path cannot carry the tunnel.")
-        elif min(ladder.values()) < max(ladder.values()) / 2:
-            print("  >>> delivery drops with size - likely size filtering.")
-            print("      Try --mtu 1360 or 1300 before giving up on this path.")
 
+    print("=" * 78)
+    print("HOW TO READ THIS")
+    print("=" * 78)
+    print("  arrived as the spoofed address  -> that side can spoof, use it")
+    print("  arrived as the sender's real ip -> packet left, source was rewritten")
+    print("  nothing arrived                 -> dropped upstream (anti-spoof filter)")
     print()
-    print("next step:")
-    if any_ok:
-        print("  spoofing is available - install the tunnel with the working IP:")
-        print("    sudo ./scripts/install.sh --role server --peer <PEER> --spoof <WORKING_IP>")
+    if overall_ok:
+        print("at least one side can spoof. install with the working address:")
+        print("  sudo ./scripts/install.sh --role server --peer <PEER> --spoof <WORKING_IP>")
     else:
-        print("  spoofing is NOT available from this side. That is normal for the")
-        print("  Iranian server: put its real IP in the spoof list and let the foreign")
-        print("  side do the spoofing (the installer defaults do exactly this).")
+        print("no spoofing observed from these addresses.")
+        print("  If this was an Iranian server: that is common but NOT universal -")
+        print("  some providers allow it. Try --spoof auto, and if that fails too,")
+        print("  let the foreign side do the spoofing (the installer default).")
 
 
 # --------------------------------------------------------------------------- #
@@ -289,12 +317,6 @@ def cmd_listen(args):
 def cmd_send(args):
     need_root()
     _unbuffer()
-
-    spoofs = []
-    for item in (args.spoof or "").split(","):
-        item = item.strip()
-        if item:
-            spoofs.append(item)
 
     peer_real = None
     try:
@@ -305,9 +327,20 @@ def cmd_send(args):
 
     my_real = real_ip_towards(peer_real)
     iface = default_iface()
+
+    raw_spoof = (args.spoof or "").strip()
+    if raw_spoof.lower() in ("auto", "guess"):
+        spoofs = auto_candidates(my_real)
+        print(f"auto mode: trying {len(spoofs)} candidate sources in {my_real.rsplit('.', 1)[0]}.0/24")
+    else:
+        spoofs = [x.strip() for x in raw_spoof.split(",") if x.strip()]
+
+    label = (args.label or "").strip()
+    pre = f"{label}__" if label else ""
     print(f"local interface : {iface}")
     print(f"local real ip   : {my_real}")
     print(f"peer            : {peer_real}:{args.port}")
+    print(f"label           : {label or '(none)'}")
     print(f"spoof sources   : {', '.join(spoofs) if spoofs else '(none, control only)'}")
     print()
 
@@ -333,11 +366,11 @@ def cmd_send(args):
         return sent
 
     print(f"1) control burst with the real source ({my_real})")
-    c = burst(my_real, "CTRL", 200, args.count, args.gap)
+    c = burst(my_real, pre + "CTRL", 200, args.count, args.gap)
     print(f"   sent {c}/{args.count}")
 
     for idx, ip in enumerate(spoofs):
-        tag = f"SPF{idx}"
+        tag = pre + f"SPF{idx}"
         print(f"2.{idx + 1}) spoof burst with source {ip}  (tag {tag})")
         n = burst(ip, tag, 200, args.count, args.gap)
         print(f"   sent {n}/{args.count}")
@@ -347,7 +380,7 @@ def cmd_send(args):
     print(f"3) size ladder from {spoofs[0] if spoofs else my_real} (looking for path filtering)")
     src = spoofs[0] if spoofs else my_real
     for size in args.sizes:
-        n = burst(src, f"SZ{size}", size, max(3, args.count // 2), args.gap)
+        n = burst(src, pre + f"SZ{size}", size, max(3, args.count // 2), args.gap)
         print(f"   {size:>5} B payload -> sent {n}")
 
     s.close()
@@ -368,12 +401,15 @@ def main():
     lp.add_argument("--port", type=int, default=2390)
     lp.add_argument("--bind", default="0.0.0.0")
     lp.add_argument("--duration", type=int, default=120, help="seconds to listen (default 120)")
+    lp.add_argument("--label", default="", help="only used for display; senders label themselves")
     lp.set_defaults(func=cmd_listen)
 
     sp = sub.add_parser("send", help="send test packets towards the peer")
     sp.add_argument("--peer", required=True, help="public IP of the listening server")
     sp.add_argument("--port", type=int, default=2390)
-    sp.add_argument("--spoof", default="", help="comma separated source IPs to try")
+    sp.add_argument("--spoof", default="",
+                    help="comma separated source IPs, or 'auto' to try several in your own /24")
+    sp.add_argument("--label", default="", help="prefix so several senders are told apart in one listener")
     sp.add_argument("--count", type=int, default=10, help="packets per test (default 10)")
     sp.add_argument("--gap", type=float, default=0.15, help="seconds between packets")
     sp.add_argument("--sizes", default="200,600,1000,1300,1472",
