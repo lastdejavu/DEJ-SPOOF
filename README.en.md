@@ -25,6 +25,30 @@ client (v2rayNG)
 * One free UDP port on both sides (default `2080`)
 * Optionally, a spare IP on the foreign server's subnet to spoof as (`x.x.x.100`)
 
+## Before anything: can my server spoof?
+
+Run this 30-second check **before** installing the tunnel. On one server listen, on the other send.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lastdejavu/DEJ-SPOOF/main/scripts/spoof-test.py -o /tmp/spoof-test.py
+sudo python3 /tmp/spoof-test.py listen --port 2390
+# on the other server:
+sudo python3 /tmp/spoof-test.py send --peer <SERVER_IP> --port 2390 --spoof 1.2.3.100
+```
+
+| Listener sees | Meaning |
+| :--- | :--- |
+| `SPF0: arrived as 1.2.3.100` | spoofing works - install with that IP |
+| `SPF0: arrived as <your real IP>` | packet left but the source was rewritten - no spoofing |
+| nothing at all | packets with foreign sources are dropped upstream |
+| no `CTRL` either | the two servers cannot reach each other on UDP at all |
+
+It also sends a size ladder (200..1472 B): if large sizes vanish, the path filters big UDP packets and no tunnel will survive there, spoofing or not.
+
+Realistic expectation: the **foreign** server can usually spoof inside its own /24; the **Iranian** server almost always only emits its real IP (hypervisor restriction). That is what the installer defaults assume.
+
+---
+
 ## Install (one line, no clone needed)
 
 On the **foreign** server:
