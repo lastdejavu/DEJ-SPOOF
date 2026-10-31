@@ -99,14 +99,6 @@ echo ">> writing /etc/spoof-tunnel/config.yaml"
 mkdir -p /etc/spoof-tunnel
 [ -f /etc/spoof-tunnel/config.yaml ] && cp -f /etc/spoof-tunnel/config.yaml "/etc/spoof-tunnel/config.yaml.bak.$(date +%s)"
 
-if [ "$ROLE" = "server" ]; then
-  ROLE_ORDER="$SPOOF
-    - $PEER_SPOOF"
-else
-  ROLE_ORDER="$SPOOF
-    - $PEER_SPOOF"
-fi
-
 cat > /etc/spoof-tunnel/config.yaml <<EOF
 tunnel:
   role: $ROLE
