@@ -1,0 +1,41 @@
+# نمونه کانفیگ سمت خارج (kharej)  —  /etc/spoof-tunnel/config.yaml
+tunnel:
+  role: server
+  outer: udp
+  peer_address: <IP_IRAN>          # IP عمومی سرور ایران
+  listen_port: 2080
+  peer_port: 2080
+
+spoof:
+  addresses:
+    - <SPOOF_IP>                   # IP جعلی این سرور، مثلاً x.x.x.100 در همان ساب‌نت
+    - <IP_IRAN>                    # IP واقعی طرف مقابل
+  loss_threshold: 2.0
+  failover_intervals: 999
+
+network:
+  interface: ens160                # نام واقعی اینترفیس خودت (ip -br a)
+  tun_name: tun0
+  local_tun_ip: 10.100.100.1
+  peer_tun_ip: 10.100.100.2
+  mtu: 1440
+
+performance:
+  rate_mbps: 1000
+  flow_limit: 0
+  batch_size: 16
+  rx_ring_blocks: 32
+  tx_cpu: -1
+  rx_cpu: -1
+
+monitoring:
+  metric_interval: 5
+  json_metrics: true
+  prometheus_enabled: false
+  prometheus_dir: /var/lib/prometheus/node-exporter
+  qdisc_monitor_interval: 60
+  log_retention_days: 30
+
+advanced:
+  sysctl_tune: true
+  watchdog_sec: 30

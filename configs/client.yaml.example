@@ -1,0 +1,46 @@
+# نمونه کانفیگ سمت ایران (client)  —  /etc/spoof-tunnel/config.yaml
+tunnel:
+  role: client
+  outer: udp
+  peer_address: <IP_KHAREJ>        # IP عمومی سرور خارج
+  listen_port: 2080
+  peer_port: 2080
+
+spoof:
+  addresses:
+    - <IP_IRAN>                    # این سرور معمولاً فقط با IP واقعی خودش می‌تواند خارج شود
+    - <SPOOF_IP>                   # IP جعلی طرف مقابل
+  loss_threshold: 2.0
+  failover_intervals: 999
+
+network:
+  interface: eth0
+  tun_name: tun0
+  local_tun_ip: 10.100.100.2
+  peer_tun_ip: 10.100.100.1
+  mtu: 1440
+
+performance:
+  rate_mbps: 1000
+  flow_limit: 0
+  batch_size: 16
+  rx_ring_blocks: 32
+  tx_cpu: -1
+  rx_cpu: -1
+
+monitoring:
+  metric_interval: 5
+  json_metrics: true
+  prometheus_enabled: false
+  prometheus_dir: /var/lib/prometheus/node-exporter
+  qdisc_monitor_interval: 60
+  log_retention_days: 30
+
+advanced:
+  sysctl_tune: true
+  watchdog_sec: 30
+
+forwarding:
+  ports:
+    - 9044
+    - 9033

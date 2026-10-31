@@ -1,0 +1,5 @@
+*.log
+*.bak
+*.bak.*
+.DS_Store
+tunnel.env
